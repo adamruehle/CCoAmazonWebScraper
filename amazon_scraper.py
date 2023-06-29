@@ -23,20 +23,6 @@ def use_search_bar(driver, product_name):
   search_input = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "input[id='twotabsearchtextbox']")))
   search_input.send_keys(product_name)
   search_input.submit()
-  print("Current URL:", driver.current_url)
-
-def find_product_at_index(driver, index):
-  try:
-    product_elements = driver.find_elements("css selector", "div[data-component-type='s-search-result']")
-    if index < len(product_elements):
-      product_element = product_elements[index]
-      link_element = product_element.find_element(By.CSS_SELECTOR, "h2 a")
-      link_url = link_element.get_attribute("href")
-      print("Link URL:", link_url)
-    else:
-      print("Product index is out of range.")
-  except Exception as e:
-      print("Error occurred:", str(e))
 
 def find_product_links(driver, product_links_queue):
   global link_count
@@ -46,7 +32,6 @@ def find_product_links(driver, product_links_queue):
     link_url = link_element.get_attribute("href")
     product_links_queue.put(link_url)
     link_count += 1
-  print("current link count:", link_count)
   return product_links_queue
 
 def find_next_button(driver, next_button_queue):
@@ -64,6 +49,7 @@ def dequeu_all(queue):
   return result
 
 def iterate_product_pages(driver):
+  global link_count
   product_links = []
   while True:
     product_links_queue = Queue()
@@ -79,13 +65,22 @@ def iterate_product_pages(driver):
     if isinstance(next_button, str) and next_button == "DNE":
       break
     driver.get(next_button.get_attribute("href"))
+    print("Current link count:", link_count)
   return product_links
 
-def initialize_scraper(product_name):
+def scrape_data(driver, product_name):
+  global link_count
+  print("Searching for product...")
+  use_search_bar(driver, product_name)
+  print("Gathering links...")
+  links = iterate_product_pages(driver)
+  print("Total link count:", link_count)
+
+def initialize_scraper():
   options = webdriver.ChromeOptions()
   options.add_argument("--headless")
   driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-  use_search_bar(driver, product_name)
-  links = iterate_product_pages(driver)
-  print("Link Count:", link_count)
+  return driver
+
+def quit_driver(driver):
   driver.quit()
