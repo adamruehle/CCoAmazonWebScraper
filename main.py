@@ -1,7 +1,7 @@
 import amazon_scraper
 
 def main():
-  driver = amazon_scraper.initialize_scraper()
+  driver = amazon_scraper.initialize_driver()
   print("Scrape (s) ListProduct (p) Quit (q)")
   user_input = ""
   while True:
