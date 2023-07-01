@@ -1,0 +1,125 @@
+[1mdiff --git a/amazon_scraper.py b/amazon_scraper.py[m
+[1mindex 340e53f..aea012f 100644[m
+[1m--- a/amazon_scraper.py[m
+[1m+++ b/amazon_scraper.py[m
+[36m@@ -14,6 +14,7 @@[m [mimport threading[m
+ from queue import Queue[m
+ from selenium.common.exceptions import TimeoutException[m
+ from selenium.webdriver.common.keys import Keys[m
+[32m+[m[32mfrom concurrent.futures import ThreadPoolExecutor[m
+ [m
+ link_count = 0[m
+ [m
+[36m@@ -23,6 +24,7 @@[m [mdef use_search_bar(driver, product_name):[m
+   search_input = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "input[id='twotabsearchtextbox']")))[m
+   search_input.send_keys(product_name)[m
+   search_input.submit()[m
+[32m+[m[32m  return driver.current_url[m
+ [m
+ def find_product_links(driver, product_links_queue):[m
+   global link_count[m
+[36m@@ -36,11 +38,24 @@[m [mdef find_product_links(driver, product_links_queue):[m
+ [m
+ def find_next_button(driver, next_button_queue):[m
+   try:[m
+[31m-    next_button_queue.put(WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.s-pagination-next"))))[m
+[32m+[m[32m    next_button = WebDriverWait(driver, 20).until([m
+[32m+[m[32m      EC.element_to_be_clickable((By.CSS_SELECTOR, "a.s-pagination-next"))[m
+[32m+[m[32m    )[m
+[32m+[m[32m    next_button_queue.put(next_button)[m
+   except TimeoutException as e:[m
+[31m-    next_button_queue.put("DNE")[m
+[32m+[m[32m    next_button_queue.put(None)[m
+   return next_button_queue[m
+ [m
+[32m+[m[32mdef find_previous_button(driver, previous_button_queue):[m
+[32m+[m[32m  try:[m
+[32m+[m[32m    next_button = WebDriverWait(driver, 20).until([m
+[32m+[m[32m      EC.element_to_be_clickable((By.CSS_SELECTOR, "a.s-pagination-previous"))[m
+[32m+[m[32m    )[m
+[32m+[m[32m    previous_button_queue.put(next_button)[m
+[32m+[m[32m  except TimeoutException as e:[m
+[32m+[m[32m    previous_button_queue.put(None)[m
+[32m+[m[32m  return previous_button_queue[m
+[32m+[m
+ def dequeu_all(queue):[m
+   result = [][m
+   while not queue:[m
+[36m@@ -48,10 +63,10 @@[m [mdef dequeu_all(queue):[m
+     result.append(item)[m
+   return result[m
+ [m
+[31m-def iterate_product_pages(driver):[m
+[32m+[m[32mdef iterate_pages_forward(driver, midpoint):[m
+   global link_count[m
+   product_links = [][m
+[31m-  while True:[m
+[32m+[m[32m  for i in range(1, midpoint):[m
+     product_links_queue = Queue()[m
+     next_button_queue = Queue()[m
+     thread_links = threading.Thread(target=find_product_links, args=(driver, product_links_queue))[m
+[36m@@ -62,23 +77,59 @@[m [mdef iterate_product_pages(driver):[m
+     thread_next_button.join()[m
+     product_links.extend(dequeu_all(product_links_queue))[m
+     next_button = next_button_queue.get()[m
+[31m-    if isinstance(next_button, str) and next_button == "DNE":[m
+[31m-      break[m
+     driver.get(next_button.get_attribute("href"))[m
+[31m-    print("Current link count:", link_count)[m
+[32m+[m[32m    print("Current link count in forward:", link_count)[m
+   return product_links[m
+ [m
+[32m+[m[32mdef iterate_pages_backward(driver, url, midpoint, last_page_number):[m
+[32m+[m[32m  url_parts = url.split("&")[m
+[32m+[m[32m  new_url = "&".join(url_parts[:-2]) + f"&page={last_page_number}"[m
+[32m+[m[32m  driver.get(new_url)[m
+[32m+[m[32m  global link_count[m
+[32m+[m[32m  product_links = [][m
+[32m+[m[32m  for x in range(last_page_number, midpoint):[m
+[32m+[m[32m    product_links_queue = Queue()[m
+[32m+[m[32m    previous_button_queue = Queue()[m
+[32m+[m[32m    thread_links = threading.Thread(target=find_product_links, args=(driver, product_links_queue))[m
+[32m+[m[32m    thread_previous_button = threading.Thread(target=find_previous_button, args=(driver, previous_button_queue))[m
+[32m+[m[32m    thread_links.start()[m
+[32m+[m[32m    thread_previous_button.start()[m
+[32m+[m[32m    thread_links.join()[m
+[32m+[m[32m    thread_previous_button.join()[m
+[32m+[m[32m    product_links.extend(dequeu_all(product_links_queue))[m
+[32m+[m[32m    previous_button = previous_button_queue.get()[m
+[32m+[m[32m    driver.get(previous_button.get_attribute("href"))[m
+[32m+[m[32m    print("Current link count in backward:", link_count)[m
+[32m+[m[32m  return product_links[m
+[32m+[m
+[32m+[m[32mdef iterate_pages_forward_wrapper():[m
+[32m+[m[32m  driver = initialize_driver()  # Initialize a new driver in the subprocess[m
+[32m+[m[32m  iterate_pages_forward(driver, midpoint)[m
+[32m+[m
+[32m+[m[32mdef iterate_pages_backward_wrapper():[m
+[32m+[m[32m  driver = initialize_driver()  # Initialize a new driver in the subprocess[m
+[32m+[m[32m  iterate_pages_backward(driver, url, midpoint, last_page_number)[m
+[32m+[m
+ def scrape_data(driver, product_name):[m
+   global link_count[m
+   print("Searching for product...")[m
+[31m-  use_search_bar(driver, product_name)[m
+[32m+[m[32m  url = use_search_bar(driver, product_name)[m
+   print("Gathering links...")[m
+[31m-  links = iterate_product_pages(driver)[m
+[32m+[m[32m  last_page_elements = driver.find_elements(By.CSS_SELECTOR, "span.s-pagination-item.s-pagination-disabled")[m
+[32m+[m[32m  last_page_number = int(last_page_elements[1].text.strip())[m
+[32m+[m[32m  midpoint = (int)(last_page_number / 2) + 1[m
+[32m+[m[32m  with ThreadPoolExecutor() as executor:[m
+[32m+[m[32m    forward_links_future = executor.submit(iterate_pages_forward, driver, midpoint)[m
+[32m+[m[32m    backward_links_future = executor.submit(iterate_pages_backward, driver, url, midpoint, last_page_number)[m
+[32m+[m
+[32m+[m[32m    forward_links_future.result()[m
+[32m+[m[32m    backward_links_future.result()[m
+   print("Total link count:", link_count)[m
+ [m
+ def initialize_driver():[m
+   options = webdriver.ChromeOptions()[m
+   options.add_argument("--headless")[m
+[32m+[m[32m  options.add_argument("--log-level=3")[m
+   driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)[m
+   return driver[m
+ [m
